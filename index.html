@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Data Antrian Puskesmas</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #1e1e2f;
+      color: #f0f0f0;
+      padding: 20px;
+    }
+    h1 {
+      color: #03dac6;
+      text-align: center;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      justify-items: center;
+    }
+    .poli-card {
+      background: #2a2a3d;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+      width: 100%;
+      max-width: 400px;
+    }
+    h2 {
+      color: #03dac6;
+      margin-top: 0;
+      text-align: center;
+    }
+    label, select, button {
+      margin: 10px 5px 10px 0;
+    }
+    select, button {
+      padding: 5px 10px;
+      background-color: #03dac6;
+      border: none;
+      border-radius: 5px;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #444;
+      text-align: left;
+    }
+    th {
+      background-color: #03dac6;
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+  <h1>Data Antrian Puskesmas</h1>
+  <div class="container" id="poliContainer"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+            apiKey: "AIzaSyDNbZIP75VMgzEiUJOLIj6_JlO1vJ16Ua0",
+            authDomain: "projek-pengunjung-puskesmas.firebaseapp.com",
+            databaseURL: "https://projek-pengunjung-puskesmas-default-rtdb.firebaseio.com",
+            projectId: "projek-pengunjung-puskesmas",
+            storageBucket: "projek-pengunjung-puskesmas.firebasestorage.app",
+            messagingSenderId: "795545795220",
+            appId: "1:795545795220:web:5ac5298fd9e58301d9d281",
+            measurementId: "G-D2D8619DLN"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const poliList = ['ANAK', 'GIGI', 'MATA'];
+
+    function createPoliCard(poliName) {
+      const container = document.getElementById('poliContainer');
+      const card = document.createElement('div');
+      card.className = 'poli-card';
+      card.innerHTML = `
+        <h2>Poli ${poliName.toUpperCase()}</h2>
+        <label for="tgl-${poliName}">Tanggal:</label>
+        <select id="tgl-${poliName}"><option value="">-- Semua Tanggal --</option></select>
+        <button onclick="downloadJSON('${poliName}')">Download JSON</button>
+        <table>
+          <thead>
+            <tr><th>Nomor</th><th>Waktu</th></tr>
+          </thead>
+          <tbody id="tabel-${poliName}"></tbody>
+        </table>
+      `;
+      container.appendChild(card);
+    }
+
+    const dataPerPoli = {};
+    const tanggalPerPoli = {};
+
+    function formatNomor(nomor) {
+      const num = parseInt(nomor, 10);
+      return num.toString().padStart(3, '0');
+    }
+
+    function ambilData(poli) {
+      db.ref('antrian/' + poli).on('value', snapshot => {
+        const data = snapshot.val();
+        const tbody = document.getElementById(`tabel-${poli}`);
+        const select = document.getElementById(`tgl-${poli}`);
+        tbody.innerHTML = '';
+        tanggalPerPoli[poli] = new Set();
+        dataPerPoli[poli] = [];
+
+        if (data) {
+          for (const id in data) {
+            const item = data[id];
+            const tanggal = item.waktu?.split(" ")[1];
+            if (tanggal) tanggalPerPoli[poli].add(tanggal);
+            dataPerPoli[poli].push(item);
+          }
+
+          select.innerHTML = '<option value="">-- Semua Tanggal --</option>';
+          Array.from(tanggalPerPoli[poli]).sort().forEach(tgl => {
+            const opt = document.createElement("option");
+            opt.value = tgl;
+            opt.textContent = tgl;
+            select.appendChild(opt);
+          });
+
+          tampilkanData(poli);
+          select.addEventListener("change", () => tampilkanData(poli));
+        }
+      });
+    }
+
+    function tampilkanData(poli) {
+      const tbody = document.getElementById(`tabel-${poli}`);
+      const selectedTgl = document.getElementById(`tgl-${poli}`).value;
+      tbody.innerHTML = '';
+
+      dataPerPoli[poli].forEach(item => {
+        if (!selectedTgl || (item.waktu && item.waktu.includes(selectedTgl))) {
+          const row = document.createElement("tr");
+          const td1 = document.createElement("td");
+          const td2 = document.createElement("td");
+          td1.textContent = formatNomor(item.nomor);
+          td2.textContent = item.waktu;
+          row.appendChild(td1);
+          row.appendChild(td2);
+          tbody.appendChild(row);
+        }
+      });
+    }
+
+    function downloadJSON(poli) {
+      const selectedTgl = document.getElementById(`tgl-${poli}`).value;
+      const filtered = dataPerPoli[poli].filter(item => !selectedTgl || (item.waktu && item.waktu.includes(selectedTgl)));
+      const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `antrian-${poli}-${selectedTgl || 'semua'}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    poliList.forEach(poli => {
+      createPoliCard(poli);
+      ambilData(poli);
+    });
+  </script>
+</body>
+</html>
